@@ -1,6 +1,6 @@
 [project]
 name = "agent-orchestrator"
-version = "0.1.0"
+version = "0.1.2"
 description = "A Multi-Agent Orchestration System with Semantic Memory"
 readme = "README.md"
 authors = [
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-orch = "main:main"
+orch = "agent_orchestrator.main:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]

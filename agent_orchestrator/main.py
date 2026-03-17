@@ -1,6 +1,7 @@
 import os
 import uuid
 import time
+import re
 from dotenv import load_dotenv
 from typing import Optional
 
@@ -13,19 +14,7 @@ from rich.live import Live
 from rich.status import Status
 from rich.theme import Theme
 
-# Load environment variables
-load_dotenv()
-
-try:
-    from langfuse.callback import CallbackHandler
-except ImportError:
-    CallbackHandler = None
-
-from orchestrator import run_orchestrator
-
-from rich.theme import Theme
 from prompt_toolkit import PromptSession
-import re
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.styles import Style as PtStyle
 
@@ -37,7 +26,9 @@ try:
 except ImportError:
     CallbackHandler = None
 
-from orchestrator import run_orchestrator
+from .orchestrator import run_orchestrator
+
+# Custom theme for a premium feel
 
 # Custom theme for a premium feel
 custom_theme = Theme({
@@ -89,14 +80,52 @@ def read_file_content(file_path: str) -> Optional[str]:
         console.print(f"[error]Error reading file:[/] {e}")
         return None
 
+def validate_environment():
+    """Checks if required environment variables are set."""
+    missing = []
+    if not os.getenv("OPENAI_API_KEY"):
+        missing.append("OPENAI_API_KEY")
+    
+    if missing:
+        error_msg = f"""
+# Configuration Missing
+The [bold yellow]OPENAI_API_KEY[/] is not set.
+
+**How to fix:**
+- **Option 1 (Bash/Gerrit/Zsh):** `export OPENAI_API_KEY="your-key"`
+- **Option 2 (PowerShell):** `$env:OPENAI_API_KEY = "your-key"`
+- **Option 3 (Interactive):** I can ask you for it now.
+"""
+        console.print(Panel(Markdown(error_msg), border_style="red", title="[bold red]API Key Missing[/]"))
+        
+        choice = Prompt.ask("Would you like to enter your API key interactively now? (y/n)", choices=["y", "n"], default="y")
+        if choice == "y":
+            api_key = Prompt.ask("Enter your OpenAI API Key", password=True)
+            if api_key.startswith("sk-"):
+                os.environ["OPENAI_API_KEY"] = api_key
+                save_env = Prompt.ask("Would you like to save this to a .env file in this directory? (y/n)", choices=["y", "n"], default="y")
+                if save_env == "y":
+                    with open(".env", "a") as f:
+                        f.write(f"\nOPENAI_API_KEY={api_key}\n")
+                    console.print("[success]Saved to .env![/]")
+                return True
+            else:
+                console.print("[bold red]Error:[/] Invalid key format. Must start with 'sk-'.")
+                return False
+        return False
+    return True
+
 def main():
     # Load environment variables (relevant when run as a tool)
     load_dotenv()
     
+    if not validate_environment():
+        return
+
     display_welcome()
 
     langfuse_handler = None
-    if CallbackHandler is not None:
+    if CallbackHandler is not None and os.getenv("LANGFUSE_PUBLIC_KEY"):
         langfuse_handler = CallbackHandler(
             public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
             secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
