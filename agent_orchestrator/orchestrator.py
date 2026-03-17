@@ -7,12 +7,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 try:
-    from langfuse.callback import CallbackHandler
+    from langfuse.langchain import CallbackHandler
 except ImportError:
     CallbackHandler = None
+
+from rich.console import Console
+from rich.panel import Panel
+console = Console()
 
 from .agents.coding import get_coding_agent
 from .agents.math import get_math_agent
@@ -47,8 +51,15 @@ def get_orchestrator_graph():
 
     # Helper function to create agent nodes
     def create_agent_node(agent_instance, name):
-        def node_function(state):
-            result = agent_instance.invoke({"messages": state["messages"]})
+        def node_function(state, config):
+            color = "cyan"
+            if "Math" in name: color = "green"
+            if "Coding" in name: color = "blue"
+            if "Knowledge" in name: color = "yellow"
+            
+            console.print(Panel(f"[bold {color}]Agent:[/] {name} is thinking...", border_style=color, title="Active Agent"))
+            
+            result = agent_instance.invoke({"messages": state["messages"]}, config=config)
             new_messages = result["messages"]
             for msg in new_messages:
                 msg.name = name
@@ -62,23 +73,44 @@ def get_orchestrator_graph():
     general_node = create_agent_node(general_agent_obj, "GeneralAgent")
 
     # Supervisor node
-    def supervisor_node(state):
+    def supervisor_node(state, config):
         system_prompt = (
-            "You are the Source Control Agent (Supervisor). Your job is to route the user's "
-            "request to the most appropriate agent: CodingAgent, MathAgent, KnowledgeAgent, or GeneralAgent. "
-            "If you have enough information to answer the user, or if all agents have completed their tasks, "
-            "respond with FINISH."
+            "You are the Multi-Agent Supervisor. Your goal is to coordinate specialized agents "
+            "to answer the user's request. \n"
+            "Current Agents: \n"
+            "- CodingAgent: Handles code, scripts, and technical tasks.\n"
+            "- MathAgent: Handles calculations and math problems.\n"
+            "- KnowledgeAgent: Retrieves information from the vector database (semantic memory).\n"
+            "- GeneralAgent: Handles general conversation and tasks not covered by others.\n\n"
+            "Rules:\n"
+            "1. If an agent (AIMessage) has already provided a complete answer, respond with 'FINISH'.\n"
+            "2. If no agent has spoken yet, you MUST route to one of the agents. Do NOT respond yourself.\n"
+            "3. If the user is asking about themselves or past info, route to 'KnowledgeAgent'.\n"
+            "4. Respond ONLY with the name of the agent to call next, or 'FINISH' if the task is done."
         )
         members = ["CodingAgent", "MathAgent", "KnowledgeAgent", "GeneralAgent"]
         options = ["FINISH"] + members
-        prompt = f"Route the conversation to one of: {', '.join(options)}. Respond ONLY with the name of the agent or FINISH."
         
-        messages = [HumanMessage(content=system_prompt + "\n\n" + prompt)] + state["messages"]
-        response = llm.invoke(messages)
+        # Prepare the routing prompt
+        prompt = f"Based on the conversation, route to one of ({', '.join(options)})."
         
-        goto = response.content.strip()
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=prompt)] + state["messages"]
+        response = llm.invoke(messages, config=config)
+        
+        goto = response.content.strip().replace("'", "").replace('"', "")
         if goto not in options:
             goto = "GeneralAgent"
+        
+        # Force routing if no agent has spoke yet
+        has_agent_msg = any(isinstance(m, AIMessage) for m in state["messages"])
+        if goto == "FINISH" and not has_agent_msg:
+            goto = "GeneralAgent"
+        
+        if goto != "FINISH":
+            console.print(Panel(f"Routing to [bold yellow]{goto}[/]", border_style="magenta", title="Supervisor"))
+        else:
+            console.print("[dim]Supervisor: Task complete. Finishing...[/]")
+            
         return {"next": goto}
 
     # Build the graph
@@ -116,11 +148,20 @@ def run_orchestrator(query: str, thread_id: str = "default", langfuse_handler: C
         config["callbacks"] = [langfuse_handler]
         
     inputs = {"messages": [HumanMessage(content=query)]}
+    # Run the graph
     final_state = graph.invoke(inputs, config=config)
     
-    assistant_response = final_state["messages"][-1].content
+    # Filter for the last message from an agent
+    agent_messages = [m for m in final_state["messages"] if isinstance(m, AIMessage)]
     
-    # Store the interaction for semantic memory
-    store_memory(query, assistant_response, thread_id)
+    if agent_messages:
+        assistant_response = agent_messages[-1].content
+    else:
+        # Fallback if the supervisor finished instantly without routing
+        assistant_response = "I'm here to help! What can I do for you today?"
+    
+    # Store the interaction for semantic memory if it's a real response
+    if agent_messages:
+        store_memory(query, assistant_response, thread_id)
     
     return assistant_response

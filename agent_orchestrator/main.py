@@ -22,7 +22,7 @@ from prompt_toolkit.styles import Style as PtStyle
 load_dotenv()
 
 try:
-    from langfuse.callback import CallbackHandler
+    from langfuse.langchain import CallbackHandler
 except ImportError:
     CallbackHandler = None
 
@@ -126,6 +126,31 @@ The [bold yellow]OPENAI_API_KEY[/] is not set.
             if Prompt.ask("Disable this prompt in future? (y/n)", choices=["y", "n"], default="y") == "y":
                 with open(".env", "a") as f: f.write("\nSEMANTIC_MEMORY_ENABLED=false\n")
     
+    # Langfuse Check
+    if not os.getenv("LANGFUSE_ENABLED"):
+        choice = Prompt.ask("Enable Langfuse Tracing? (y/n)", choices=["y", "n"], default="n")
+        if choice == "y":
+            os.environ["LANGFUSE_ENABLED"] = "true"
+            # Check for Langfuse Keys
+            for key in ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"]:
+                if not os.getenv(key):
+                    val = Prompt.ask(f"Enter your {key.replace('_', ' ').title()}")
+                    os.environ[key] = val
+                    if Prompt.ask(f"Save {key} to .env?", choices=["y", "n"], default="y") == "y":
+                        with open(".env", "a") as f: f.write(f"\n{key}={val}\n")
+            
+            if not os.getenv("LANGFUSE_HOST"):
+                host = Prompt.ask("Enter Langfuse Host", default="https://cloud.langfuse.com")
+                os.environ["LANGFUSE_HOST"] = host
+                if Prompt.ask("Save HOST to .env?", choices=["y", "n"], default="y") == "y":
+                    with open(".env", "a") as f: f.write(f"\nLANGFUSE_HOST={host}\n")
+            
+            with open(".env", "a") as f: f.write("\nLANGFUSE_ENABLED=true\n")
+        else:
+            os.environ["LANGFUSE_ENABLED"] = "false"
+            if Prompt.ask("Disable Langfuse prompt in future? (y/n)", choices=["y", "n"], default="y") == "y":
+                with open(".env", "a") as f: f.write("\nLANGFUSE_ENABLED=false\n")
+    
     return True
 
 def main():
@@ -137,13 +162,18 @@ def main():
 
     display_welcome()
 
-    langfuse_handler = None
-    if CallbackHandler is not None and os.getenv("LANGFUSE_PUBLIC_KEY"):
-        langfuse_handler = CallbackHandler(
-            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-            secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-        )
+    # --- Langfuse Initialization ---
+    if CallbackHandler is not None and os.getenv("LANGFUSE_ENABLED") == "true":
+        try:
+            # Langfuse v2+ standard: picks up keys/host from environment variables
+            langfuse_handler = CallbackHandler()
+            host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            console.print(f"[bold green]✔[/] Langfuse Tracing Enabled ([dim]{host}[/])")
+        except Exception as e:
+            console.print(f"[bold red]✘[/] Langfuse Init Error: {e}")
+    else:
+        console.print("[dim]Langfuse Tracing: Disabled[/]")
+    # ---------------------------
 
     sessions = {"default": str(uuid.uuid4())}
     current_session = "default"
@@ -234,13 +264,21 @@ def main():
                     ))
                     continue
 
-            # Run with status indicator
-            with console.status("[bold magenta]Orchestrating agents...[/]", spinner="dots"):
-                response = run_orchestrator(
-                    user_input, 
-                    thread_id=sessions[current_session], 
-                    langfuse_handler=langfuse_handler
-                )
+            # Run the orchestrator (status handles by internal nodes)
+            response = run_orchestrator(
+                user_input, 
+                thread_id=sessions[current_session], 
+                langfuse_handler=langfuse_handler
+            )
+            # Flush traces to ensure they are sent (using safe check for different library versions)
+            if langfuse_handler:
+                try:
+                    if hasattr(langfuse_handler, "flush"):
+                        langfuse_handler.flush()
+                    elif hasattr(langfuse_handler, "_langfuse_client") and hasattr(langfuse_handler._langfuse_client, "flush"):
+                        langfuse_handler._langfuse_client.flush()
+                except:
+                    pass
             
             # Formatted Assistant Output
             console.print(Panel(

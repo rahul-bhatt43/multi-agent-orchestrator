@@ -59,48 +59,68 @@ def retrieve_memories(query: str, k: int = 5):
 
 def create_agent(llm: ChatOpenAI, tools: List[Union[BaseTool, callable]], system_prompt: str):
     """
-    Returns a 'Runnable' that handles system prompt and tool execution.
+    Returns an Agent instance that handles system prompt and tool execution.
     """
-    if tools:
-        llm_with_tools = llm.bind_tools(tools)
-    else:
-        llm_with_tools = llm
+    class Agent:
+        def __init__(self, llm: ChatOpenAI, tools: List[Union[BaseTool, callable]], system_prompt: str):
+            self.llm = llm
+            self.tools = tools
+            self.system_prompt = system_prompt
 
-    def agent_node(self, inputs: dict):
-        messages = inputs.get("messages", [])
-        user_query = messages[-1].content if messages else ""
-        
-        # Retrieve long-term semantic context
-        semantic_context = retrieve_memories(user_query)
-        
-        full_system_prompt = system_prompt
-        if semantic_context:
-            full_system_prompt += f"\n\n{semantic_context}\nUse the above context if relevant to the current conversation."
+        def agent_node(self, inputs: dict, config: dict = None):
+            """Standard agent node for LangGraph."""
+            messages = inputs.get("messages", [])
+            user_query = messages[-1].content if messages else ""
             
-        combined_messages = [SystemMessage(content=full_system_prompt)] + messages
-        
-        while True:
-            response = llm_with_tools.invoke(combined_messages)
+            # Retrieve long-term semantic context
+            semantic_context = retrieve_memories(user_query)
             
-            # If no tool calls, return the response
-            if not response.tool_calls:
-                return {"messages": [response]}
+            # Prepare messages with system prompt + semantic context
+            full_system_prompt = self.system_prompt
+            if semantic_context:
+                full_system_prompt += f"\n\n{semantic_context}\nUse the above context if relevant."
             
-            # Execute tool calls
-            combined_messages.append(response)
-            for tool_call in response.tool_calls:
-                tool_name = tool_call["name"]
-                tool_args = tool_call["args"]
-                
-                # Find the tool
-                tool = next((t for t in tools if (getattr(t, "name", None) == tool_name or getattr(t, "__name__", None) == tool_name)), None)
-                if tool:
-                    try:
-                        tool_output = tool.invoke(tool_args) if hasattr(tool, "invoke") else tool(**tool_args)
-                        combined_messages.append(ToolMessage(content=str(tool_output), tool_call_id=tool_call["id"]))
-                    except Exception as e:
-                        combined_messages.append(ToolMessage(content=f"Error executing tool: {str(e)}", tool_call_id=tool_call["id"]))
+            # Ensure the system message is prepended
+            combined_messages = [SystemMessage(content=full_system_prompt)] + list(messages)
+            
+            try:
+                if self.tools:
+                    llm_with_tools = self.llm.bind_tools(self.tools)
                 else:
-                    combined_messages.append(ToolMessage(content=f"Tool {tool_name} not found.", tool_call_id=tool_call["id"]))
-            
-    return type("AgentRunnable", (), {"invoke": agent_node})()
+                    llm_with_tools = self.llm
+                
+                while True:
+                    # Pass config for Langfuse tracing
+                    response = llm_with_tools.invoke(combined_messages, config=config)
+                    
+                    if not response.tool_calls:
+                        # Store in semantic memory if enabled
+                        thread_id = "default"
+                        if config and "configurable" in config:
+                            thread_id = config["configurable"].get("thread_id", "default")
+                        store_memory(user_query, response.content, thread_id)
+                        
+                        return {"messages": [response]}
+                    
+                    combined_messages.append(response)
+                    for tool_call in response.tool_calls:
+                        tool_name = tool_call["name"]
+                        tool_args = tool_call["args"]
+                        tool = next((t for t in self.tools if (getattr(t, "name", None) == tool_name or getattr(t, "__name__", None) == tool_name)), None)
+                        
+                        if tool:
+                            try:
+                                tool_output = tool.invoke(tool_args) if hasattr(tool, "invoke") else tool(**tool_args)
+                                combined_messages.append(ToolMessage(content=str(tool_output), tool_call_id=tool_call["id"]))
+                            except Exception as e:
+                                combined_messages.append(ToolMessage(content=f"Error: {e}", tool_call_id=tool_call["id"]))
+                        else:
+                            combined_messages.append(ToolMessage(content=f"Tool {tool_name} not found.", tool_call_id=tool_call["id"]))
+            except Exception as e:
+                print(f"DEBUG: Error in agent: {e}")
+                return {"messages": [AIMessage(content=f"An error occurred: {e}")]}
+
+        def invoke(self, inputs: dict, config: dict = None):
+            return self.agent_node(inputs, config=config)
+
+    return Agent(llm, tools, system_prompt)
