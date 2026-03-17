@@ -9,4 +9,9 @@ dependencies = [
     "langchain-openai>=1.1.11",
     "langgraph>=1.1.2",
     "python-dotenv>=1.1.1",
+    "langfuse>=2.60.0",
+    "pinecone-client>=4.1.0",
+    "langchain-pinecone>=0.2.0",
+    "langchain-community>=0.3.0",
+    "numexpr>=2.10.1",
 ]
