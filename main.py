@@ -1,18 +1,28 @@
 import os
 from dotenv import load_dotenv
-from langfuse.callback import CallbackHandler
+try:
+    from langfuse.callback import CallbackHandler
+except ImportError:
+    from langfuse import Langfuse
+    # We'll need to adapt this if CallbackHandler is missing, 
+    # but for now let's see if we can at least import something.
+    CallbackHandler = None 
 from orchestrator import run_orchestrator
 
 # Load environment variables
 load_dotenv()
 
 def main():
-    # Initialize LangFuse callback handler
-    langfuse_handler = CallbackHandler(
-        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-        host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
-    )
+    # Initialize LangFuse callback handler if available
+    langfuse_handler = None
+    if CallbackHandler is not None:
+        langfuse_handler = CallbackHandler(
+            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+            secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+        )
+    else:
+        print("Warning: LangFuse CallbackHandler not found. Tracing disabled.")
 
     print("--- Multi-Agent Orchestration System ---")
     

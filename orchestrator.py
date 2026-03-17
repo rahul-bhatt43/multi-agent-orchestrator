@@ -1,10 +1,18 @@
 import operator
 from typing import Annotated, List, Tuple, Union, Sequence, TypedDict
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
-from langfuse.callback import CallbackHandler
+try:
+    from langfuse.callback import CallbackHandler
+except ImportError:
+    CallbackHandler = None
 
 from agents.coding import get_coding_agent
 from agents.math import get_math_agent
@@ -17,28 +25,35 @@ class AgentState(TypedDict):
     next: str
 
 # Initialize the LLM
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-# Create agents
-coding_agent = get_coding_agent(llm)
-math_agent = get_math_agent(llm)
-knowledge_agent = get_knowledge_agent(llm)
-general_agent = get_general_agent(llm)
+# Initialize agent instances
+coding_agent_obj = get_coding_agent(llm)
+math_agent_obj = get_math_agent(llm)
+knowledge_agent_obj = get_knowledge_agent(llm)
+general_agent_obj = get_general_agent(llm)
 
 # Helper function to create agent nodes
-def create_node(agent, name):
-    def node(state):
-        result = agent.invoke(state["messages"])
+def create_agent_node(agent_instance, name):
+    def node_function(state):
+        # Invoke the agent
+        result = agent_instance.invoke({"messages": state["messages"]})
+        
+        # The result already contains the messages to add
+        new_messages = result["messages"]
+        for msg in new_messages:
+            msg.name = name
+            
         return {
-            "messages": [AIMessage(content=result.content, name=name)],
+            "messages": new_messages,
         }
-    return node
+    return node_function
 
-# Define nodes
-coding_node = create_node(coding_agent, "CodingAgent")
-math_node = create_node(math_agent, "MathAgent")
-knowledge_node = create_node(knowledge_agent, "KnowledgeAgent")
-general_node = create_node(general_agent, "GeneralAgent")
+# Define nodes using instances
+coding_node = create_agent_node(coding_agent_obj, "CodingAgent")
+math_node = create_agent_node(math_agent_obj, "MathAgent")
+knowledge_node = create_agent_node(knowledge_agent_obj, "KnowledgeAgent")
+general_node = create_agent_node(general_agent_obj, "GeneralAgent")
 
 # Supervisor (Source Control Agent)
 def supervisor_node(state):
