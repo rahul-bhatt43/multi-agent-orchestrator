@@ -82,6 +82,8 @@ def supervisor_node(state):
         
     return {"next": goto}
 
+from langgraph.checkpoint.memory import MemorySaver
+
 # Build the graph
 workflow = StateGraph(AgentState)
 
@@ -110,11 +112,25 @@ workflow.add_conditional_edges(
 
 workflow.set_entry_point("Supervisor")
 
-# Compile
-graph = workflow.compile()
+# Initialize checkpointer for session persistence
+checkpointer = MemorySaver()
 
-def run_orchestrator(query: str, langfuse_handler: CallbackHandler = None):
-    config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+# Compile with checkpointer
+graph = workflow.compile(checkpointer=checkpointer)
+
+from agents.base import store_memory
+
+def run_orchestrator(query: str, thread_id: str = "default", langfuse_handler: CallbackHandler = None):
+    config = {"configurable": {"thread_id": thread_id}}
+    if langfuse_handler:
+        config["callbacks"] = [langfuse_handler]
+        
     inputs = {"messages": [HumanMessage(content=query)]}
     final_state = graph.invoke(inputs, config=config)
-    return final_state["messages"][-1].content
+    
+    assistant_response = final_state["messages"][-1].content
+    
+    # Store the interaction for semantic memory
+    store_memory(query, assistant_response, thread_id)
+    
+    return assistant_response
