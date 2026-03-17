@@ -1,6 +1,6 @@
 [project]
 name = "agent-orchestrator"
-version = "0.1.12"
+version = "0.1.17"
 description = "A Multi-Agent Orchestration System with Semantic Memory"
 readme = "README.md"
 authors = [

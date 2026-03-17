@@ -16,6 +16,7 @@ from rich.theme import Theme
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.styles import Style as PtStyle
 
 # Load environment variables
@@ -44,8 +45,7 @@ console = Console(theme=custom_theme)
 
 # Commands for auto-completion
 COMMANDS = ["/new", "/switch", "/list", "/exit", "/help", "/add"]
-# Use a compiled regex pattern for matching commands
-command_completer = WordCompleter(COMMANDS, pattern=re.compile(r'^/.*'))
+command_completer = WordCompleter(COMMANDS, ignore_case=True, sentence=True)
 
 def display_welcome():
     welcome_text = """
@@ -178,8 +178,12 @@ def main():
     sessions = {"default": str(uuid.uuid4())}
     current_session = "default"
     
-    # Initialize prompt_toolkit session
-    pt_session = PromptSession(completer=command_completer)
+    # Initialize prompt_toolkit session with better completion style
+    pt_session = PromptSession(
+        completer=command_completer,
+        complete_while_typing=True,
+        complete_style=CompleteStyle.MULTI_COLUMN
+    )
     
     while True:
         try:
@@ -202,6 +206,8 @@ def main():
                     new_id = f"session_{len(sessions)}"
                     sessions[new_id] = str(uuid.uuid4())
                     current_session = new_id
+                    os.system('cls' if os.name == 'nt' else 'clear')
+                    display_welcome()
                     console.print(f"[bold info]Started new session:[/] [session]{current_session}[/]")
                     continue
                     
@@ -210,6 +216,8 @@ def main():
                         target = cmd_parts[1]
                         if target in sessions:
                             current_session = target
+                            os.system('cls' if os.name == 'nt' else 'clear')
+                            display_welcome()
                             console.print(f"[bold info]Switched to session:[/] [session]{current_session}[/]")
                         else:
                             console.print(f"[error]Error: Session '{target}' not found.[/]")

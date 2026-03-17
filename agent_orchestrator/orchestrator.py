@@ -74,6 +74,12 @@ def get_orchestrator_graph():
 
     # Supervisor node
     def supervisor_node(state, config):
+        # Identify if this is a new turn (no AIMessage yet for the current HumanMessage)
+        # In our graph, the last message is either the initial HumanMessage or the result of an agent.
+        messages = state["messages"]
+        last_message = messages[-1]
+        is_new_turn = isinstance(last_message, HumanMessage)
+        
         system_prompt = (
             "You are the Multi-Agent Supervisor. Your goal is to coordinate specialized agents "
             "to answer the user's request. \n"
@@ -83,29 +89,39 @@ def get_orchestrator_graph():
             "- KnowledgeAgent: Retrieves information from the vector database (semantic memory).\n"
             "- GeneralAgent: Handles general conversation and tasks not covered by others.\n\n"
             "Rules:\n"
-            "1. If an agent (AIMessage) has already provided a complete answer, respond with 'FINISH'.\n"
-            "2. If no agent has spoken yet, you MUST route to one of the agents. Do NOT respond yourself.\n"
-            "3. If the user is asking about themselves or past info, route to 'KnowledgeAgent'.\n"
+            "1. If an agent (AIMessage) has already provided a complete answer to the LATEST user request, respond with 'FINISH'.\n"
+            "2. If the user just spoke and no agent has responded yet, you MUST route to one of the agents. Do NOT respond with 'FINISH' immediately.\n"
+            "3. If the user is asking about themselves, past info, or something previously mentioned, route to 'KnowledgeAgent' first.\n"
             "4. Respond ONLY with the name of the agent to call next, or 'FINISH' if the task is done."
         )
         members = ["CodingAgent", "MathAgent", "KnowledgeAgent", "GeneralAgent"]
         options = ["FINISH"] + members
         
-        # Prepare the routing prompt
         prompt = f"Based on the conversation, route to one of ({', '.join(options)})."
         
-        messages = [SystemMessage(content=system_prompt), HumanMessage(content=prompt)] + state["messages"]
-        response = llm.invoke(messages, config=config)
+        # Prepare messages for the supervisor
+        supervisor_messages = [SystemMessage(content=system_prompt), HumanMessage(content=prompt)] + messages
+        response = llm.invoke(supervisor_messages, config=config)
         
         goto = response.content.strip().replace("'", "").replace('"', "")
         if goto not in options:
             goto = "GeneralAgent"
         
-        # Force routing if no agent has spoke yet
-        has_agent_msg = any(isinstance(m, AIMessage) for m in state["messages"])
-        if goto == "FINISH" and not has_agent_msg:
-            goto = "GeneralAgent"
+        # STRICTOR FINISH LOGIC:
+        # If the last message is an AIMessage, we generally want to FINISH.
+        # Only continue if the AI response was just a routing step or needs more data.
+        if not is_new_turn and goto != "FINISH":
+            # Check if the last AI message was actually a response or just an error/thinking
+            # For simplicity, if an agent spoke, we finish unless the user query was complex.
+            # GPT-4o-mini sometimes over-routes; let's force a finish if it tries to route to the SAME agent again.
+            last_agent = getattr(last_message, "name", None)
+            if goto == last_agent:
+                goto = "FINISH"
         
+        # Prevent premature FINISH on a new turn
+        if goto == "FINISH" and is_new_turn:
+            goto = "GeneralAgent"
+            
         if goto != "FINISH":
             console.print(Panel(f"Routing to [bold yellow]{goto}[/]", border_style="magenta", title="Supervisor"))
         else:
@@ -149,19 +165,34 @@ def run_orchestrator(query: str, thread_id: str = "default", langfuse_handler: C
         
     inputs = {"messages": [HumanMessage(content=query)]}
     # Run the graph
+    # LangGraph with memory allows us to get the initial state length
+    initial_messages_count = len(graph.get_state(config).values.get("messages", []))
+    
+    inputs = {"messages": [HumanMessage(content=query)]}
     final_state = graph.invoke(inputs, config=config)
     
-    # Filter for the last message from an agent
-    agent_messages = [m for m in final_state["messages"] if isinstance(m, AIMessage)]
+    # Get all messages in the final state
+    all_messages = final_state["messages"]
     
-    if agent_messages:
-        assistant_response = agent_messages[-1].content
+    # New messages are those added after the initial ones + the one we just injected
+    # our query is at index initial_messages_count
+    new_messages = all_messages[initial_messages_count + 1:]
+    
+    # Filter for AI responses in the new messages
+    agent_responses = [m for m in new_messages if isinstance(m, AIMessage)]
+    
+    if agent_responses:
+        # Join multiple responses if the supervisor routed to multiple agents sequentially
+        assistant_response = "\n\n".join([m.content for m in agent_responses])
     else:
-        # Fallback if the supervisor finished instantly without routing
-        assistant_response = "I'm here to help! What can I do for you today?"
+        # Check if the last message in the whole list is an AI message from a previous turn
+        # that addressed the current query (unlikely with FINISH logic but good to have)
+        if all_messages and isinstance(all_messages[-1], AIMessage):
+             assistant_response = all_messages[-1].content
+        else:
+            assistant_response = "I've acknowledged your request. How else can I help?"
     
-    # Store the interaction for semantic memory if it's a real response
-    if agent_messages:
-        store_memory(query, assistant_response, thread_id)
+    # Store the interaction for semantic memory
+    store_memory(query, assistant_response, thread_id)
     
     return assistant_response
