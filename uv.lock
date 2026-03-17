@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agent-orchestrator"
-version = "0.1.17"
+version = "0.1.21"
 source = { editable = "." }
 dependencies = [
     { name = "langchain" },

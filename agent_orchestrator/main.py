@@ -14,10 +14,11 @@ from rich.live import Live
 from rich.status import Status
 from rich.theme import Theme
 
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, HTML
+from prompt_toolkit.styles import Style
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.shortcuts import CompleteStyle
-from prompt_toolkit.styles import Style as PtStyle
+from prompt_toolkit.key_binding import KeyBindings
 
 # Load environment variables
 load_dotenv()
@@ -178,17 +179,38 @@ def main():
     sessions = {"default": str(uuid.uuid4())}
     current_session = "default"
     
+    # Custom key bindings for multi-line support
+    kb = KeyBindings()
+    
+    @kb.add('enter')
+    def _(event):
+        """Submit on Enter (if not just a newline)"""
+        # If the user is typing a command, we might want to just submit.
+        # But for general chat, Enter should submit.
+        event.current_buffer.validate_and_handle()
+
+    @kb.add('escape', 'enter')
+    def _(event):
+        """Insert a newline on Alt+Enter (Escape + Enter)"""
+        event.current_buffer.insert_text('\n')
+
     # Initialize prompt_toolkit session with better completion style
     pt_session = PromptSession(
         completer=command_completer,
         complete_while_typing=True,
-        complete_style=CompleteStyle.MULTI_COLUMN
+        complete_style=CompleteStyle.MULTI_COLUMN,
+        key_bindings=kb
+        # enable_system_clipboard=True
     )
     
     while True:
         try:
             # Use prompt_toolkit for suggestions
-            user_input = pt_session.prompt(f"[{current_session}] User: ").strip()
+            # Use prompt_toolkit for multi-line and paste support
+            user_input = pt_session.prompt(
+                f"[{current_session}] User: ",
+                multiline=True
+            ).strip()
             
             if not user_input:
                 continue

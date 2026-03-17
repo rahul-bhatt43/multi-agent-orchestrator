@@ -4,9 +4,10 @@ A premium, multi-agent orchestration system with optional long-term semantic mem
 
 ## ✨ Features
 
-- **Multi-Agent Flow**: Orchestrated by a Supervisor agent using LangGraph.
+- **Multi-Agent Flow**: Orchestrated by a Supervisor agent using LangGraph for precise task delegation.
 - **Optional Semantic Memory**: Toggle long-term context awareness via Pinecone. Store and retrieve memories across different project sessions.
-- **Premium CLI**: Built with `rich` and `prompt_toolkit` for a beautiful, interactive experience with command suggestions.
+- **Premium CLI**: Built with `rich` and `prompt_toolkit` for a beautiful, interactive experience with command suggestions and multi-column autocomplete.
+- **Multi-line & Paste Support**: Intuitive "Enter to Submit" and "Alt+Enter" for new lines, optimized for pasting large blocks of text.
 - **File Context Support**: Add external files to any session using `/add <path>`.
 - **Global Access**: Install as a global tool and run `orch` from any directory.
 - **Interactive Onboarding**: Guides you through setting up OpenAI and Pinecone keys securely within the terminal.
@@ -70,12 +71,21 @@ agent-orchestrator/
 
 | Command | Description |
 | :--- | :--- |
-| `/new` | Start a fresh conversational session |
-| `/switch <id>` | Switch between active sessions |
+| `/new` | Start a fresh conversational session (Clears terminal) |
+| `/switch <id>` | Switch between active sessions (Clears terminal) |
 | `/list` | List all active sessions and their IDs |
 | `/add <path>` | Feed a file's content into the agent's context |
 | `/help` | Display the welcome and help menu |
 | `/exit` | Safely shutdown the application |
+
+### ⌨️ Keyboard Shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| `Enter` | Submit your message |
+| `Alt + Enter` | Insert a new line (Multi-line mode) |
+| `Arrow Keys` | Navigate command suggestions from `/` |
+| `Ctrl + C` | Cancel current operation / Exit |
 
 ## ⚠️ Troubleshooting
 
