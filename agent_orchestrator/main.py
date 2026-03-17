@@ -82,12 +82,9 @@ def read_file_content(file_path: str) -> Optional[str]:
 
 def validate_environment():
     """Checks if required environment variables are set."""
-    missing = []
+    # OpenAI Check
     if not os.getenv("OPENAI_API_KEY"):
-        missing.append("OPENAI_API_KEY")
-    
-    if missing:
-        error_msg = f"""
+        error_msg = """
 # Configuration Missing
 The [bold yellow]OPENAI_API_KEY[/] is not set.
 
@@ -103,16 +100,32 @@ The [bold yellow]OPENAI_API_KEY[/] is not set.
             api_key = Prompt.ask("Enter your OpenAI API Key", password=True)
             if api_key.startswith("sk-"):
                 os.environ["OPENAI_API_KEY"] = api_key
-                save_env = Prompt.ask("Would you like to save this to a .env file in this directory? (y/n)", choices=["y", "n"], default="y")
-                if save_env == "y":
-                    with open(".env", "a") as f:
-                        f.write(f"\nOPENAI_API_KEY={api_key}\n")
-                    console.print("[success]Saved to .env![/]")
-                return True
+                if Prompt.ask("Save to .env?", choices=["y", "n"], default="y") == "y":
+                    with open(".env", "a") as f: f.write(f"\nOPENAI_API_KEY={api_key}\n")
             else:
-                console.print("[bold red]Error:[/] Invalid key format. Must start with 'sk-'.")
+                console.print("[bold red]Error:[/] Invalid key format.")
                 return False
-        return False
+        else:
+            return False
+
+    # Semantic Memory Check
+    if not os.getenv("SEMANTIC_MEMORY_ENABLED"):
+        choice = Prompt.ask("Enable Long-term Semantic Memory (Pinecone)? (y/n)", choices=["y", "n"], default="n")
+        if choice == "y":
+            os.environ["SEMANTIC_MEMORY_ENABLED"] = "true"
+            # Check for Pinecone Keys
+            for key in ["PINECONE_API_KEY", "PINECONE_INDEX_NAME"]:
+                if not os.getenv(key):
+                    val = Prompt.ask(f"Enter your {key.replace('_', ' ').title()}")
+                    os.environ[key] = val
+                    if Prompt.ask(f"Save {key} to .env?", choices=["y", "n"], default="y") == "y":
+                        with open(".env", "a") as f: f.write(f"\n{key}={val}\n")
+            with open(".env", "a") as f: f.write("\nSEMANTIC_MEMORY_ENABLED=true\n")
+        else:
+            os.environ["SEMANTIC_MEMORY_ENABLED"] = "false"
+            if Prompt.ask("Disable this prompt in future? (y/n)", choices=["y", "n"], default="y") == "y":
+                with open(".env", "a") as f: f.write("\nSEMANTIC_MEMORY_ENABLED=false\n")
+    
     return True
 
 def main():

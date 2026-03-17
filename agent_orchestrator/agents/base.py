@@ -9,13 +9,17 @@ from langchain_core.tools import BaseTool
 
 def store_memory(query: str, response: str, thread_id: str):
     """Stores a query-response pair into Pinecone for long-term memory."""
+    if os.getenv("SEMANTIC_MEMORY_ENABLED") != "true":
+        return
+        
     try:
         index_name = os.getenv("PINECONE_INDEX_NAME")
-        if not index_name:
+        api_key = os.getenv("PINECONE_API_KEY")
+        if not index_name or not api_key:
             return
             
         embeddings = OpenAIEmbeddings()
-        vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings)
+        vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings, pinecone_api_key=api_key)
         
         doc = Document(
             page_content=f"User: {query}\nAssistant: {response}",
@@ -31,13 +35,17 @@ def store_memory(query: str, response: str, thread_id: str):
 
 def retrieve_memories(query: str, k: int = 5):
     """Retrieves relevant past interactions from Pinecone."""
+    if os.getenv("SEMANTIC_MEMORY_ENABLED") != "true":
+        return ""
+        
     try:
         index_name = os.getenv("PINECONE_INDEX_NAME")
-        if not index_name:
+        api_key = os.getenv("PINECONE_API_KEY")
+        if not index_name or not api_key:
             return ""
             
         embeddings = OpenAIEmbeddings()
-        vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings)
+        vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings, pinecone_api_key=api_key)
         
         docs = vectorstore.similarity_search(query, k=k)
         if not docs:
@@ -46,7 +54,7 @@ def retrieve_memories(query: str, k: int = 5):
         memory_text = "\n---\n".join([doc.page_content for doc in docs])
         return f"\nRelevant past interactions:\n{memory_text}\n"
     except Exception as e:
-        print(f"DEBUG: Error retrieving memory: {e}")
+        # Silently fail for retrieval if memory is not working
         return ""
 
 def create_agent(llm: ChatOpenAI, tools: List[Union[BaseTool, callable]], system_prompt: str):
