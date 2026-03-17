@@ -21,8 +21,8 @@ A premium, multi-agent orchestration system with optional long-term semantic mem
 ### Steps
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/agent-orchestrator.git
-   cd agent-orchestrator
+   git clone https://github.com/rahul-bhatt43/multi-agent-orchestrator.git
+   cd multi-agent-orchestrator
    ```
 
 2. **Install globally as a tool**:
@@ -44,7 +44,7 @@ uv run python -m agent_orchestrator.main
 ## 🛠️ Project Structure
 
 ```text
-agent-orchestrator/
+multi-agent-orchestrator/
 ├── agent_orchestrator/       # Core package
 │   ├── agents/               # Specialized agent definitions
 │   │   ├── base.py           # Base agent logic & Memory integration
