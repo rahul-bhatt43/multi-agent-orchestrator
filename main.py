@@ -52,7 +52,7 @@ custom_theme = Theme({
 console = Console(theme=custom_theme)
 
 # Commands for auto-completion
-COMMANDS = ["/new", "/switch", "/list", "/exit", "/help"]
+COMMANDS = ["/new", "/switch", "/list", "/exit", "/help", "/add"]
 # Use a compiled regex pattern for matching commands
 command_completer = WordCompleter(COMMANDS, pattern=re.compile(r'^/.*'))
 
@@ -66,6 +66,7 @@ Welcome to your premium AI assistant! This system orchestrates multiple speciali
 - `/new`: Start a fresh session
 - `/switch <id>`: Switch conversations
 - `/list`: See active sessions
+- `/add <file>`: Give file context to agents
 - `/help`: Show this help message
 - `/exit`: Quit the application
 
@@ -73,7 +74,25 @@ Welcome to your premium AI assistant! This system orchestrates multiple speciali
 """
     console.print(Panel(Markdown(welcome_text), border_style="blue", title="[bold blue]System Booted[/]"))
 
+def read_file_content(file_path: str) -> Optional[str]:
+    """Reads a file and returns its content or None if error."""
+    try:
+        # Resolve relative path based on current working directory
+        abs_path = os.path.abspath(file_path)
+        if not os.path.exists(abs_path):
+            console.print(f"[error]Error: File '{file_path}' not found.[/]")
+            return None
+        
+        with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
+            return f.read()
+    except Exception as e:
+        console.print(f"[error]Error reading file:[/] {e}")
+        return None
+
 def main():
+    # Load environment variables (relevant when run as a tool)
+    load_dotenv()
+    
     display_welcome()
 
     langfuse_handler = None
@@ -138,6 +157,26 @@ def main():
                     console.print(table)
                     continue
                 
+                elif cmd == "/add":
+                    if len(cmd_parts) > 1:
+                        file_path = cmd_parts[1]
+                        content = read_file_content(file_path)
+                        if content:
+                            context_msg = f"--- BEGIN FILE CONTEXT: {file_path} ---\n{content}\n--- END FILE CONTEXT ---"
+                            # Inject context into orchestrator as a background "context provide" message
+                            with console.status(f"[bold info]Adding {file_path} to context...[/]"):
+                                # We send it as a "hidden" query that the agent acknowledges
+                                run_orchestrator(
+                                    f"I am providing the content of '{file_path}' as context. Please acknowledge you've received it.\n\n{context_msg}",
+                                    thread_id=sessions[current_session],
+                                    langfuse_handler=langfuse_handler
+                                )
+                            console.print(f"[bold info]File context added:[/] [session]{file_path}[/]")
+                        continue
+                    else:
+                        console.print("[warning]Usage: /add <file_path>[/]")
+                        continue
+
                 elif cmd == "/help":
                     display_welcome()
                     continue

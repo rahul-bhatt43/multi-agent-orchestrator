@@ -1,20 +1,29 @@
 [project]
 name = "agent-orchestrator"
 version = "0.1.0"
-description = "Add your description here"
+description = "A Multi-Agent Orchestration System with Semantic Memory"
 readme = "README.md"
+authors = [
+    { name = "Sunil", email = "sunilnegidsb@gmail.com" }
+]
 requires-python = ">=3.12"
 dependencies = [
-    "crewai>=1.10.1",
-    "langchain-openai>=1.1.11",
-    "langgraph>=1.1.2",
-    "python-dotenv>=1.1.1",
-    "langfuse>=2.60.0",
-    "pinecone-client>=4.1.0",
-    "langchain-pinecone>=0.2.0",
-    "langchain-community>=0.3.0",
-    "numexpr>=2.10.1",
-    "langchain>=1.2.12",
-    "rich>=14.3.3",
-    "prompt-toolkit>=3.0.52",
+    "langchain-openai>=0.1.0",
+    "langgraph>=0.0.30",
+    "python-dotenv>=1.0.0",
+    "langfuse>=2.0.0",
+    "pinecone-client>=3.0.0",
+    "langchain-pinecone>=0.1.0",
+    "langchain-community>=0.1.0",
+    "numexpr>=2.8.0",
+    "langchain>=0.1.0",
+    "rich>=13.0.0",
+    "prompt-toolkit>=3.0.0",
 ]
+
+[project.scripts]
+orch = "main:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
