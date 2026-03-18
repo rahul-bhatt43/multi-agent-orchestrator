@@ -82,17 +82,19 @@ def get_orchestrator_graph():
         
         system_prompt = (
             "You are the Multi-Agent Supervisor. Your goal is to coordinate specialized agents "
-            "to answer the user's request. \n"
-            "Current Agents: \n"
-            "- CodingAgent: Handles code, scripts, and technical tasks.\n"
-            "- MathAgent: Handles complex calculations and math problems requiring a calculator.\n"
-            "- KnowledgeAgent: ONLY for retrieving private information from the user's uploaded files (/add) or specific personal details mentioned in the past.\n"
-            "- GeneralAgent: Handles general conversation, common world knowledge (science, history, basic theory), and general logic. If the question is about a general topic like 'Pythagorean Theorem' and NOT a specific file the user added, pick this agent.\n\n"
-            "Rules:\n"
-            "1. If an agent (AIMessage) has already provided a complete answer to the LATEST user request, respond with 'FINISH'.\n"
-            "2. If the user just spoke and no agent has responded yet, you MUST route to one of the agents. Do NOT respond with 'FINISH' immediately.\n"
-            "3. If the user is asking about themselves, past info, or something previously mentioned, route to 'KnowledgeAgent' first.\n"
-            "4. Respond ONLY with the name of the agent to call next, or 'FINISH' if the task is done."
+            "to help the user with specialized tasks. \n"
+            "1. CodingAgent: Handles all project-related code exploration and modifications. "
+            "It can perform multi-file planning, precise line-based patching, and full-file writing.\n"
+            "2. MathAgent: Handles complex mathematical calculations.\n"
+            "3. KnowledgeAgent: Retrieves information from long-term memory/knowledge base.\n"
+            "4. GeneralAgent: Handles general conversation and tasks.\n\n"
+            "ROUTING RULES:\n"
+        "- **Project Awareness**: If the user asks 'What is this project?', 'What are my files?', 'Tell me about the code', or anything related to the WORKSPACE, you MUST route to **CodingAgent**. GeneralAgent does NOT have access to the files.\n"
+        "- **Tool Errors**: If an agent returns a Tool Error (e.g. 'Search text not found'), do NOT just ask them to try again. If they fail twice, ask the user for clarification or show the latest code snippet.\n"
+        "- **CodingAgent Priorities**: Use it for all multi-file planning and precise patching. Remind it to 'read_project_file_with_lines' if it hits a string-matching error.\n"
+        "- **Confirmation Flow**: If the user says 'yes', 'proceed', 'go ahead', or 'yy' to a proposed change, ALWAYS route back to the agent that proposed it (usually CodingAgent).\n"
+        "- **Finish State**: Respond with 'FINISH' only when the user's latest request is fully satisfied or no agent can do more.\n\n"
+        "Respond ONLY with the name of the next agent, or 'FINISH'."
         )
         members = ["CodingAgent", "MathAgent", "KnowledgeAgent", "GeneralAgent"]
         options = ["FINISH"] + members
@@ -155,11 +157,11 @@ def get_orchestrator_graph():
 
 from .agents.base import store_memory
 
-def run_orchestrator(query: str, thread_id: str = "default", langfuse_handler: CallbackHandler = None):
+def run_orchestrator(query: str, thread_id: str = "default", langfuse_handler: CallbackHandler = None, on_tool_call: callable = None):
     # Get graph lazily (will raise error if no API key)
     graph = get_orchestrator_graph()
     
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {"configurable": {"thread_id": thread_id, "on_tool_call": on_tool_call}}
     if langfuse_handler:
         config["callbacks"] = [langfuse_handler]
         
